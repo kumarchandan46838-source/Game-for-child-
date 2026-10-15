@@ -1,0 +1,6 @@
+{
+  "name": "Army Kids Adventure",
+  "description": "A vibrant, kid-friendly cartoon army gaming adventure featuring 8 playable mini-games, 20 levels, vehicle drives, obstacle courses, memory missions, animal rescues, rewards, and child-safe controls.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
