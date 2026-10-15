@@ -8,6 +8,7 @@ import { ArrowUp, ArrowDown, ArrowLeft, ArrowRight, RotateCcw, X, Heart } from '
 interface Props {
   level: LevelConfig;
   onVictory: (stars: number, score: number, coins: number) => void;
+  onGameOver: (reason: 'lives' | 'timeout' | 'moves', score: number, progressPct: number) => void;
   onExit: () => void;
 }
 
@@ -18,13 +19,15 @@ interface Tile {
   collected?: boolean;
 }
 
-export const AnimalRescueGame: React.FC<Props> = ({ level, onVictory, onExit }) => {
+export const AnimalRescueGame: React.FC<Props> = ({ level, onVictory, onGameOver, onExit }) => {
   const [animalPos, setAnimalPos] = useState({ x: 0, y: 0 });
   const [grid, setGrid] = useState<Tile[][]>([]);
   const [movesCount, setMovesCount] = useState(0);
   const [treatsCollected, setTreatsCollected] = useState(0);
   const [starsCollected, setStarsCollected] = useState(0);
   const [isWon, setIsWon] = useState(false);
+
+  const maxMoves = level.id >= 19 ? 18 : level.id >= 13 ? 16 : 14;
 
   // Pick animal based on level
   const animalEmoji = level.id === 13 ? '🐼' : level.id === 19 ? '🐰' : '🐶';
@@ -95,13 +98,14 @@ export const AnimalRescueGame: React.FC<Props> = ({ level, onVictory, onExit }) 
     // Check rock obstacle
     const targetTile = grid[ny][nx];
     if (targetTile.type === 'rock') {
-      sound.playTryAgain();
+      sound.playHit();
       return;
     }
 
     // Valid move!
     setAnimalPos({ x: nx, y: ny });
-    setMovesCount((m) => m + 1);
+    const newMoves = movesCount + 1;
+    setMovesCount(newMoves);
     sound.playJump();
 
     // Check collect treats or stars
@@ -118,7 +122,7 @@ export const AnimalRescueGame: React.FC<Props> = ({ level, onVictory, onExit }) 
     // Check Tent goal
     if (nx === tentPos.x && ny === tentPos.y) {
       setIsWon(true);
-      const score = 100 + treatsCollected * 30 + starsCollected * 40 - Math.min(50, movesCount * 2);
+      const score = 100 + treatsCollected * 30 + starsCollected * 40 - Math.min(50, newMoves * 2);
       const earnedStars = calculateStars(score, level.targetStarsScore);
       sound.playVictory();
       try {
@@ -127,6 +131,20 @@ export const AnimalRescueGame: React.FC<Props> = ({ level, onVictory, onExit }) 
       setTimeout(() => {
         onVictory(earnedStars, score, 25);
       }, 1200);
+      return;
+    }
+
+    // Check out of moves -> GAME OVER!
+    if (newMoves >= maxMoves) {
+      setIsWon(true);
+      sound.playGameOver();
+      const score = treatsCollected * 20 + starsCollected * 30;
+      const distFromStart = nx + ny;
+      const totalDist = (cols - 1) + (rows - 1);
+      const pct = Math.min(95, Math.floor((distFromStart / totalDist) * 100));
+      setTimeout(() => {
+        onGameOver('moves', score, pct);
+      }, 600);
     }
   };
 
@@ -158,7 +176,7 @@ export const AnimalRescueGame: React.FC<Props> = ({ level, onVictory, onExit }) 
         </div>
 
         <div className="flex items-center gap-2 text-emerald-200 font-bold text-sm">
-          <span>🐾 Steps: {movesCount}</span>
+          <span>🐾 Steps: {movesCount} / {maxMoves}</span>
         </div>
 
         <div className="flex items-center gap-2">

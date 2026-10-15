@@ -113,6 +113,22 @@ export function validateParentMathGate(numA: number, numB: number, answer: numbe
 }
 
 /**
+ * Calculates remaining lives after taking damage.
+ */
+export function deductLife(currentLives: number, damage: number = 1): number {
+  return Math.max(0, currentLives - damage);
+}
+
+/**
+ * Checks if game over should trigger based on lives or timer.
+ */
+export function checkIsGameOver(lives: number, timeLeftSeconds?: number): boolean {
+  if (lives <= 0) return true;
+  if (timeLeftSeconds !== undefined && timeLeftSeconds <= 0) return true;
+  return false;
+}
+
+/**
  * Evaluates achievement badges from player stats
  */
 export function evaluateBadgeUnlocks(stats: {

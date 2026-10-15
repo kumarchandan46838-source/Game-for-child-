@@ -10,6 +10,7 @@ interface Props {
   level: LevelConfig;
   character: string;
   onVictory: (stars: number, score: number, coins: number) => void;
+  onGameOver: (reason: 'lives' | 'timeout' | 'moves', score: number, progressPct: number) => void;
   onExit: () => void;
 }
 
@@ -28,9 +29,10 @@ interface Collectible {
   collected: boolean;
 }
 
-export const ObstacleCourseGame: React.FC<Props> = ({ level, character, onVictory, onExit }) => {
+export const ObstacleCourseGame: React.FC<Props> = ({ level, character, onVictory, onGameOver, onExit }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [score, setScore] = useState(0);
+  const [lives, setLives] = useState(3);
   const [coinsCollected, setCoinsCollected] = useState(0);
   const [starsCollected, setStarsCollected] = useState(0);
   const [isPaused, setIsPaused] = useState(false);
@@ -47,6 +49,8 @@ export const ObstacleCourseGame: React.FC<Props> = ({ level, character, onVictor
     score: 0,
     coins: 0,
     stars: 0,
+    lives: 3,
+    invincibleTimer: 0,
     keys: { left: false, right: false, jump: false },
     platforms: [] as Platform[],
     collectibles: [] as Collectible[],
@@ -171,12 +175,26 @@ export const ObstacleCourseGame: React.FC<Props> = ({ level, character, onVictor
           }
         }
 
-        // River water rescue fallback (friendly respawn without frustration)
+        // River water rescue fallback with 1 Heart Damage!
         if (s.y > 330) {
+          s.lives -= 1;
+          setLives(s.lives);
+          sound.playHit();
+
+          if (s.lives <= 0 && !s.isFinished) {
+            s.isFinished = true;
+            sound.playGameOver();
+            const pct = Math.min(100, Math.floor((s.x / s.finishX) * 100));
+            setTimeout(() => {
+              onGameOver('lives', s.score, pct);
+            }, 600);
+            return;
+          }
+
           s.x = Math.max(60, s.x - 220);
           s.y = 180;
           s.vy = 0;
-          sound.playTryAgain();
+          s.invincibleTimer = 40;
         }
 
         // Progress calculation
@@ -308,9 +326,11 @@ export const ObstacleCourseGame: React.FC<Props> = ({ level, character, onVictor
             ctx.fill();
             drawStar(ctx, s.finishX + 26, 190, 7, 5, '#ffffff');
 
-            // Draw Soldier
+            // Draw Soldier (with flicker when damaged)
             const action = !s.isGrounded ? 'jump' : Math.abs(s.vx) > 0.5 ? 'run' : 'idle';
-            drawCartoonSoldier(ctx, s.x, s.y, 1, character, action, s.frame);
+            if (s.invincibleTimer <= 0 || s.invincibleTimer % 6 < 3) {
+              drawCartoonSoldier(ctx, s.x, s.y, 1, character, action, s.frame);
+            }
 
             ctx.restore();
           }
@@ -322,20 +342,34 @@ export const ObstacleCourseGame: React.FC<Props> = ({ level, character, onVictor
 
     animId = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(animId);
-  }, [isPaused, level, character, onVictory]);
+  }, [isPaused, level, character, onVictory, onGameOver]);
 
   return (
     <div className="relative w-full h-full flex flex-col items-center justify-between bg-teal-950 p-2 sm:p-4 select-none">
       {/* Top HUD */}
       <div className="w-full max-w-2xl bg-teal-900/90 border-2 border-teal-600 rounded-2xl px-4 py-2.5 flex items-center justify-between shadow-lg text-white">
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-1.5 bg-amber-500/30 px-3 py-1 rounded-xl border border-amber-400">
-            <span className="text-xl">⭐</span>
-            <span className="font-bold text-lg text-amber-300">{starsCollected}</span>
+        <div className="flex items-center gap-2 sm:gap-3">
+          {/* 3 Lives / Hearts */}
+          <div className="flex items-center gap-1 bg-red-950/60 px-2.5 py-1 rounded-xl border border-red-500/60">
+            {[1, 2, 3].map((heartIdx) => (
+              <span
+                key={heartIdx}
+                className={`text-lg transition-transform ${
+                  heartIdx <= lives ? 'scale-100 text-rose-500' : 'scale-90 opacity-30 grayscale'
+                }`}
+              >
+                ❤️
+              </span>
+            ))}
           </div>
-          <div className="flex items-center gap-1.5 bg-yellow-500/30 px-3 py-1 rounded-xl border border-yellow-400">
-            <span className="text-xl">🪙</span>
-            <span className="font-bold text-lg text-yellow-300">{coinsCollected}</span>
+
+          <div className="flex items-center gap-1.5 bg-amber-500/30 px-2.5 py-1 rounded-xl border border-amber-400">
+            <span className="text-base sm:text-lg">⭐</span>
+            <span className="font-bold text-sm sm:text-base text-amber-300">{starsCollected}</span>
+          </div>
+          <div className="flex items-center gap-1.5 bg-yellow-500/30 px-2.5 py-1 rounded-xl border border-yellow-400">
+            <span className="text-base sm:text-lg">🪙</span>
+            <span className="font-bold text-sm sm:text-base text-yellow-300">{coinsCollected}</span>
           </div>
         </div>
 

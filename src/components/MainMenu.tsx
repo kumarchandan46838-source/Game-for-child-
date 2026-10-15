@@ -25,6 +25,7 @@ interface Props {
   onOpenDailyChallenge: () => void;
   onOpenParentSettings: () => void;
   onOpenPrivacyPolicy: () => void;
+  onOpenApkModal: () => void;
   onToggleSound: () => void;
   onToggleMusic: () => void;
   isPhoneFrame: boolean;
@@ -40,6 +41,7 @@ export const MainMenu: React.FC<Props> = ({
   onOpenDailyChallenge,
   onOpenParentSettings,
   onOpenPrivacyPolicy,
+  onOpenApkModal,
   onToggleSound,
   onToggleMusic,
   isPhoneFrame,
@@ -259,20 +261,27 @@ export const MainMenu: React.FC<Props> = ({
         </button>
       </div>
 
-      {/* Parent Area & Privacy Footer (Gated by math challenge for child protection) */}
+      {/* Parent Area, APK & Privacy Footer */}
       <div className="w-full max-w-xl z-10 flex items-center justify-between pt-2 border-t border-emerald-800/80 text-xs">
         <button
           onClick={onOpenPrivacyPolicy}
           className="flex items-center gap-1.5 text-emerald-300 hover:text-white cursor-pointer py-1 px-2 rounded-lg hover:bg-emerald-900/60"
         >
-          <FileText size={15} /> Privacy Policy
+          <FileText size={14} /> Privacy
+        </button>
+
+        <button
+          onClick={onOpenApkModal}
+          className="flex items-center gap-1.5 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-400/50 px-2.5 py-1.5 rounded-xl font-bold cursor-pointer active:scale-95 shadow-sm"
+        >
+          <Smartphone size={15} /> Get Android APK
         </button>
 
         <button
           onClick={onOpenParentSettings}
-          className="flex items-center gap-1.5 bg-emerald-900 hover:bg-emerald-800 border border-emerald-700 text-amber-300 px-3 py-1.5 rounded-xl font-bold cursor-pointer active:scale-95"
+          className="flex items-center gap-1.5 bg-emerald-900 hover:bg-emerald-800 border border-emerald-700 text-emerald-200 hover:text-white px-2.5 py-1.5 rounded-xl font-bold cursor-pointer active:scale-95"
         >
-          <Shield size={15} /> Parents & Settings
+          <Shield size={14} /> Parents
         </button>
       </div>
     </div>

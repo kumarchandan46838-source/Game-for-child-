@@ -8,6 +8,7 @@ import { RotateCcw, X, Check } from 'lucide-react';
 interface Props {
   level: LevelConfig;
   onVictory: (stars: number, score: number, coins: number) => void;
+  onGameOver?: (reason: 'lives' | 'timeout' | 'moves', score: number, progressPct: number) => void;
   onExit: () => void;
 }
 

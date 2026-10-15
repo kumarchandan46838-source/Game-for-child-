@@ -8,6 +8,7 @@ import { RotateCcw, X, Sparkles } from 'lucide-react';
 interface Props {
   level: LevelConfig;
   onVictory: (stars: number, score: number, coins: number) => void;
+  onGameOver: (reason: 'lives' | 'timeout' | 'moves', score: number, progressPct: number) => void;
   onExit: () => void;
 }
 
@@ -30,7 +31,7 @@ const ALL_CARDS = [
   { emoji: '🐶', name: 'Camp Rover' },
 ];
 
-export const MemoryMissionGame: React.FC<Props> = ({ level, onVictory, onExit }) => {
+export const MemoryMissionGame: React.FC<Props> = ({ level, onVictory, onGameOver, onExit }) => {
   const [cards, setCards] = useState<CardItem[]>([]);
   const [flippedIndices, setFlippedIndices] = useState<number[]>([]);
   const [moves, setMoves] = useState(0);
@@ -38,6 +39,7 @@ export const MemoryMissionGame: React.FC<Props> = ({ level, onVictory, onExit })
   const [isLocked, setIsLocked] = useState(false);
 
   const numPairs = level.id >= 14 ? 4 : 3;
+  const maxMoves = numPairs === 3 ? 12 : 16;
 
   const initGame = () => {
     const selected = ALL_CARDS.slice(0, numPairs);
@@ -92,7 +94,8 @@ export const MemoryMissionGame: React.FC<Props> = ({ level, onVictory, onExit })
     setFlippedIndices(newFlipped);
 
     if (newFlipped.length === 2) {
-      setMoves((m) => m + 1);
+      const newMoves = moves + 1;
+      setMoves(newMoves);
       setIsLocked(true);
 
       const [firstIdx, secondIdx] = newFlipped;
@@ -113,7 +116,7 @@ export const MemoryMissionGame: React.FC<Props> = ({ level, onVictory, onExit })
 
           // Check Win condition
           if (nextMatches >= numPairs) {
-            const score = 150 - moves * 8;
+            const score = 150 - newMoves * 6;
             const earnedStars = calculateStars(score, level.targetStarsScore);
             sound.playVictory();
             try {
@@ -133,6 +136,15 @@ export const MemoryMissionGame: React.FC<Props> = ({ level, onVictory, onExit })
           setCards(newCards);
           setFlippedIndices([]);
           setIsLocked(false);
+
+          // Check if max moves reached without finding all pairs -> GAME OVER!
+          if (newMoves >= maxMoves) {
+            sound.playGameOver();
+            const pct = Math.min(90, Math.floor((matchesFound / numPairs) * 100));
+            setTimeout(() => {
+              onGameOver('moves', matchesFound * 25, pct);
+            }, 600);
+          }
         }, 850);
       }
     }
@@ -150,8 +162,8 @@ export const MemoryMissionGame: React.FC<Props> = ({ level, onVictory, onExit })
             </span>
           </div>
           <div className="flex items-center gap-1.5 bg-blue-500/30 px-3 py-1 rounded-xl border border-blue-400">
-            <span className="text-sm font-semibold text-blue-200">Moves:</span>
-            <span className="font-bold text-lg text-white">{moves}</span>
+            <span className="text-xs sm:text-sm font-semibold text-blue-200">Moves:</span>
+            <span className="font-bold text-sm sm:text-base text-white">{moves} / {maxMoves}</span>
           </div>
         </div>
 

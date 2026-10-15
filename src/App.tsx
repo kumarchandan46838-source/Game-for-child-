@@ -21,7 +21,9 @@ import { ParentSettingsModal } from './components/modals/ParentSettingsModal';
 import { ParentGateModal } from './components/modals/ParentGateModal';
 import { PrivacyPolicyModal } from './components/modals/PrivacyPolicyModal';
 import { VictoryModal } from './components/modals/VictoryModal';
+import { GameOverModal } from './components/modals/GameOverModal';
 import { AdMobModal } from './components/modals/AdMobModal';
+import { ApkDownloadModal } from './components/modals/ApkDownloadModal';
 
 // 8 Playable Mini-Games
 import { ArmyRunnerGame } from './components/minigames/ArmyRunnerGame';
@@ -37,7 +39,7 @@ export default function App() {
   const [profile, setProfile] = useState<PlayerProfile>(() => loadProfile());
   const [currentLevel, setCurrentLevel] = useState<LevelConfig>(LEVELS[0]);
   const [gameState, setGameState] = useState<
-    'menu' | 'playing' | 'victory'
+    'menu' | 'playing' | 'victory' | 'gameover'
   >('menu');
 
   // Active Modals
@@ -50,6 +52,7 @@ export default function App() {
     | 'parent-settings'
     | 'privacy-policy'
     | 'parent-gate'
+    | 'apk-install'
   >(null);
 
   const [parentGateTarget, setParentGateTarget] = useState<
@@ -62,6 +65,13 @@ export default function App() {
     score: number;
     coins: number;
   }>({ stars: 0, score: 0, coins: 0 });
+
+  // Game Over result storage
+  const [gameOverData, setGameOverData] = useState<{
+    reason: 'lives' | 'timeout' | 'moves' | 'mistakes' | 'crashed';
+    score: number;
+    progressPercent: number;
+  }>({ reason: 'lives', score: 0, progressPercent: 0 });
 
   // AdMob Interstitial State
   const [showAdMobInterstitial, setShowAdMobInterstitial] = useState(false);
@@ -179,6 +189,16 @@ export default function App() {
     setGameState('victory');
   };
 
+  // Level Game Over / Out handler
+  const handleLevelGameOver = (
+    reason: 'lives' | 'timeout' | 'moves' | 'mistakes' | 'crashed',
+    score: number,
+    progressPercent: number
+  ) => {
+    setGameOverData({ reason, score, progressPercent });
+    setGameState('gameover');
+  };
+
   // Next level navigation with AdMob Frequency Capping check
   const handleNextLevel = () => {
     const nextLevelIndex = LEVELS.findIndex((l) => l.id === currentLevel.id) + 1;
@@ -217,9 +237,10 @@ export default function App() {
       character: profile.activeCharacter,
       vehicle: profile.activeVehicle,
       onVictory: handleLevelVictory,
+      onGameOver: handleLevelGameOver,
       onExit: () => setGameState('menu'),
       onRestart: () => {
-        // Toggle key by state reset
+        setGameState('playing');
       },
     };
 
@@ -274,6 +295,7 @@ export default function App() {
               setActiveModal('parent-gate');
             }}
             onOpenPrivacyPolicy={() => setActiveModal('privacy-policy')}
+            onOpenApkModal={() => setActiveModal('apk-install')}
             onToggleSound={handleToggleSound}
             onToggleMusic={handleToggleMusic}
             isPhoneFrame={isPhoneFrame}
@@ -294,6 +316,18 @@ export default function App() {
             onRetry={() => setGameState('playing')}
             onHome={() => setGameState('menu')}
             hasNextLevel={currentLevel.id < LEVELS.length}
+          />
+        )}
+
+        {/* Game Over / Out Screen */}
+        {gameState === 'gameover' && (
+          <GameOverModal
+            level={currentLevel}
+            reason={gameOverData.reason}
+            score={gameOverData.score}
+            progressPercent={gameOverData.progressPercent}
+            onRetry={() => setGameState('playing')}
+            onHome={() => setGameState('menu')}
           />
         )}
 
@@ -354,6 +388,10 @@ export default function App() {
 
         {activeModal === 'privacy-policy' && (
           <PrivacyPolicyModal onClose={() => setActiveModal(null)} />
+        )}
+
+        {activeModal === 'apk-install' && (
+          <ApkDownloadModal onClose={() => setActiveModal(null)} />
         )}
 
         {/* Limited AdMob Interstitial Overlay (Family safe test ad) */}

@@ -11,7 +11,24 @@ import {
   checkAdMobEligibility,
   validateParentMathGate,
   evaluateBadgeUnlocks,
+  deductLife,
+  checkIsGameOver,
 } from './logic.ts';
+
+test('deductLife reduces lives accurately down to zero', () => {
+  assert.equal(deductLife(3, 1), 2);
+  assert.equal(deductLife(2, 1), 1);
+  assert.equal(deductLife(1, 1), 0);
+  assert.equal(deductLife(0, 1), 0, 'Cannot drop below zero');
+});
+
+test('checkIsGameOver triggers when lives reach zero or time runs out', () => {
+  assert.equal(checkIsGameOver(3, 10), false);
+  assert.equal(checkIsGameOver(1, 2), false);
+  assert.equal(checkIsGameOver(0, 10), true, 'Zero lives triggers Game Over');
+  assert.equal(checkIsGameOver(2, 0), true, 'Time expiring triggers Game Over');
+  assert.equal(checkIsGameOver(2, -1), true);
+});
 
 test('calculateStars awards correct stars according to score and target', () => {
   assert.equal(calculateStars(0, 100), 0);

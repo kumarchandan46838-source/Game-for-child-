@@ -10,6 +10,7 @@ interface Props {
   level: LevelConfig;
   character: string;
   onVictory: (stars: number, score: number, coins: number) => void;
+  onGameOver: (reason: 'lives' | 'timeout' | 'moves', score: number, progressPct: number) => void;
   onExit: () => void;
 }
 
@@ -23,7 +24,7 @@ interface FloatingStar {
   collected: boolean;
 }
 
-export const StarCollectorGame: React.FC<Props> = ({ level, character, onVictory, onExit }) => {
+export const StarCollectorGame: React.FC<Props> = ({ level, character, onVictory, onGameOver, onExit }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [starsCollected, setStarsCollected] = useState(0);
   const [coinsCollected, setCoinsCollected] = useState(0);
@@ -102,14 +103,25 @@ export const StarCollectorGame: React.FC<Props> = ({ level, character, onVictory
           const next = prev - 1;
           if (next <= 0 && !gameState.current.isFinished) {
             gameState.current.isFinished = true;
-            const earnedStars = calculateStars(gameState.current.score, level.targetStarsScore);
-            sound.playVictory();
-            try {
-              confetti({ particleCount: 70, spread: 60 });
-            } catch {}
-            setTimeout(() => {
-              onVictory(earnedStars, gameState.current.score, gameState.current.collectedCoins);
-            }, 1200);
+            const s = gameState.current;
+            const pct = Math.min(100, Math.floor((s.collectedStars / s.totalStarsGoal) * 100));
+
+            if (s.collectedStars >= s.totalStarsGoal) {
+              const earnedStars = calculateStars(s.score, level.targetStarsScore);
+              sound.playVictory();
+              try {
+                confetti({ particleCount: 70, spread: 60 });
+              } catch {}
+              setTimeout(() => {
+                onVictory(earnedStars, s.score, s.collectedCoins);
+              }, 1200);
+            } else {
+              // Out of time -> GAME OVER!
+              sound.playGameOver();
+              setTimeout(() => {
+                onGameOver('timeout', s.score, pct);
+              }, 600);
+            }
             return 0;
           }
           return next;

@@ -8,6 +8,7 @@ import { Pause, Play, RotateCcw, X, Crosshair } from 'lucide-react';
 interface Props {
   level: LevelConfig;
   onVictory: (stars: number, score: number, coins: number) => void;
+  onGameOver: (reason: 'lives' | 'timeout' | 'moves', score: number, progressPct: number) => void;
   onExit: () => void;
 }
 
@@ -29,7 +30,7 @@ interface SplashEffect {
   color: string;
 }
 
-export const TargetPracticeGame: React.FC<Props> = ({ level, onVictory, onExit }) => {
+export const TargetPracticeGame: React.FC<Props> = ({ level, onVictory, onGameOver, onExit }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [poppedCount, setPoppedCount] = useState(0);
   const [score, setScore] = useState(0);
@@ -152,14 +153,25 @@ export const TargetPracticeGame: React.FC<Props> = ({ level, onVictory, onExit }
           const next = prev - 1;
           if (next <= 0 && !gameState.current.isFinished) {
             gameState.current.isFinished = true;
-            const earnedStars = calculateStars(gameState.current.score, level.targetStarsScore);
-            sound.playVictory();
-            try {
-              confetti({ particleCount: 70, spread: 60 });
-            } catch {}
-            setTimeout(() => {
-              onVictory(earnedStars, gameState.current.score, 20);
-            }, 1200);
+            const s = gameState.current;
+            const pct = Math.min(100, Math.floor((s.popped / goalTargets) * 100));
+
+            if (s.popped >= goalTargets) {
+              const earnedStars = calculateStars(s.score, level.targetStarsScore);
+              sound.playVictory();
+              try {
+                confetti({ particleCount: 70, spread: 60 });
+              } catch {}
+              setTimeout(() => {
+                onVictory(earnedStars, s.score, 20);
+              }, 1200);
+            } else {
+              // Out of time -> GAME OVER!
+              sound.playGameOver();
+              setTimeout(() => {
+                onGameOver('timeout', s.score, pct);
+              }, 600);
+            }
             return 0;
           }
           return next;

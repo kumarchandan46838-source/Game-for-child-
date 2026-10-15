@@ -1,0 +1,22 @@
+{
+  "name": "Army Kids Adventure",
+  "short_name": "ArmyKids",
+  "description": "A colorful cartoon army gaming adventure with 8 mini-games, 20 levels, and kid-safe fun!",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#064e3b",
+  "theme_color": "#4d7c0f",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

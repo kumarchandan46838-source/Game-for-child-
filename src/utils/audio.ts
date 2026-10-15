@@ -241,6 +241,67 @@ class SoundEngine {
     } catch {}
   }
 
+  public playHit() {
+    if (this.isSoundMuted) return;
+    const ctx = this.initCtx();
+    if (!ctx) return;
+
+    try {
+      const now = ctx.currentTime;
+      // Punchy cartoon thud / obstacle hit
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(220, now);
+      osc.frequency.exponentialRampToValueAtTime(60, now + 0.14);
+
+      gain.gain.setValueAtTime(0.35 * this.soundVolume, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.16);
+
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+
+      osc.start(now);
+      osc.stop(now + 0.16);
+    } catch {}
+  }
+
+  public playGameOver() {
+    if (this.isSoundMuted) return;
+    const ctx = this.initCtx();
+    if (!ctx) return;
+
+    try {
+      const now = ctx.currentTime;
+      // Cartoon slide down defeat notes (G4 -> F4 -> D4 -> C#4)
+      const notes = [
+        { f: 392.0, t: 0.0, d: 0.18 },
+        { f: 349.23, t: 0.18, d: 0.18 },
+        { f: 293.66, t: 0.36, d: 0.22 },
+        { f: 277.18, t: 0.58, d: 0.45 },
+      ];
+
+      notes.forEach((n) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(n.f, now + n.t);
+        osc.frequency.exponentialRampToValueAtTime(n.f * 0.9, now + n.t + n.d);
+
+        gain.gain.setValueAtTime(0.3 * this.soundVolume, now + n.t);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + n.t + n.d);
+
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+
+        osc.start(now + n.t);
+        osc.stop(now + n.t + n.d);
+      });
+    } catch {}
+  }
+
   public playTryAgain() {
     if (this.isSoundMuted) return;
     const ctx = this.initCtx();

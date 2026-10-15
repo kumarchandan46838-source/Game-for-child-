@@ -10,6 +10,7 @@ interface Props {
   level: LevelConfig;
   vehicle: string;
   onVictory: (stars: number, score: number, coins: number) => void;
+  onGameOver: (reason: 'lives' | 'timeout' | 'moves', score: number, progressPct: number) => void;
   onExit: () => void;
 }
 
@@ -27,9 +28,10 @@ interface Pickup {
   collected: boolean;
 }
 
-export const JeepAdventureGame: React.FC<Props> = ({ level, vehicle, onVictory, onExit }) => {
+export const JeepAdventureGame: React.FC<Props> = ({ level, vehicle, onVictory, onGameOver, onExit }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [score, setScore] = useState(0);
+  const [lives, setLives] = useState(3);
   const [coinsCollected, setCoinsCollected] = useState(0);
   const [starsCollected, setStarsCollected] = useState(0);
   const [isPaused, setIsPaused] = useState(false);
@@ -46,6 +48,8 @@ export const JeepAdventureGame: React.FC<Props> = ({ level, vehicle, onVictory, 
     score: 0,
     coins: 0,
     stars: 0,
+    lives: 3,
+    invincibleTimer: 0,
     fuel: 100,
     obstacles: [] as Obstacle[],
     pickups: [] as Pickup[],
@@ -138,14 +142,22 @@ export const JeepAdventureGame: React.FC<Props> = ({ level, vehicle, onVictory, 
 
           if (next <= 0 && !s.isFinished) {
             s.isFinished = true;
-            const earnedStars = calculateStars(s.score, level.targetStarsScore);
-            sound.playVictory();
-            try {
-              confetti({ particleCount: 75, spread: 70, origin: { y: 0.6 } });
-            } catch {}
-            setTimeout(() => {
-              onVictory(earnedStars, s.score, s.coins);
-            }, 1200);
+            if (s.score >= level.targetStarsScore) {
+              const earnedStars = calculateStars(s.score, level.targetStarsScore);
+              sound.playVictory();
+              try {
+                confetti({ particleCount: 75, spread: 70, origin: { y: 0.6 } });
+              } catch {}
+              setTimeout(() => {
+                onVictory(earnedStars, s.score, s.coins);
+              }, 1200);
+            } else {
+              // Failed to reach required score in time -> GAME OVER!
+              sound.playGameOver();
+              setTimeout(() => {
+                onGameOver('timeout', s.score, pct);
+              }, 600);
+            }
             return 0;
           }
           return next;
@@ -159,6 +171,10 @@ export const JeepAdventureGame: React.FC<Props> = ({ level, vehicle, onVictory, 
         s.frame++;
         s.roadOffset = (s.roadOffset + s.speed) % 80;
 
+        if (s.invincibleTimer > 0) {
+          s.invincibleTimer--;
+        }
+
         // Smooth lane interpolation
         const targetX = laneXCoordinates[s.targetLane];
         s.jeepX += (targetX - s.jeepX) * 0.18;
@@ -170,9 +186,23 @@ export const JeepAdventureGame: React.FC<Props> = ({ level, vehicle, onVictory, 
           // Check collision with jeep
           if (!obs.hit && Math.abs(obs.y - s.jeepY) < 30 && Math.abs(obsX - s.jeepX) < 35) {
             obs.hit = true;
-            sound.playTryAgain();
-            s.score = Math.max(0, s.score - 10);
-            setScore(s.score);
+            if (s.invincibleTimer <= 0) {
+              s.lives -= 1;
+              setLives(s.lives);
+              s.invincibleTimer = 45;
+              sound.playHit();
+
+              // Check OUT / GAME OVER condition
+              if (s.lives <= 0 && !s.isFinished) {
+                s.isFinished = true;
+                sound.playGameOver();
+                const pct = Math.min(100, Math.floor((s.elapsedSeconds / s.totalDuration) * 100));
+                setTimeout(() => {
+                  onGameOver('lives', s.score, pct);
+                }, 600);
+                return;
+              }
+            }
           }
         });
 
@@ -316,9 +346,11 @@ export const JeepAdventureGame: React.FC<Props> = ({ level, vehicle, onVictory, 
               }
             });
 
-            // Draw Cartoon Jeep (top-down or 2.5D perspective)
+            // Draw Cartoon Jeep (with damage flicker)
             const bounce = Math.sin(s.frame * 0.3) * 2;
-            drawCartoonJeep(ctx, s.jeepX, s.jeepY, 1, vehicle, s.frame * 0.1, bounce);
+            if (s.invincibleTimer <= 0 || s.invincibleTimer % 6 < 3) {
+              drawCartoonJeep(ctx, s.jeepX, s.jeepY, 1, vehicle, s.frame * 0.1, bounce);
+            }
           }
         }
       }
@@ -331,20 +363,34 @@ export const JeepAdventureGame: React.FC<Props> = ({ level, vehicle, onVictory, 
       cancelAnimationFrame(animId);
       clearInterval(timerId);
     };
-  }, [isPaused, level, vehicle, onVictory]);
+  }, [isPaused, level, vehicle, onVictory, onGameOver]);
 
   return (
     <div className="relative w-full h-full flex flex-col items-center justify-between bg-emerald-950 p-2 sm:p-4 select-none">
       {/* Top HUD */}
       <div className="w-full max-w-2xl bg-amber-950/90 border-2 border-amber-600 rounded-2xl px-4 py-2.5 flex items-center justify-between shadow-lg text-white">
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-1.5 bg-amber-500/30 px-3 py-1 rounded-xl border border-amber-400">
-            <span className="text-xl">⭐</span>
-            <span className="font-bold text-lg text-amber-300">{starsCollected}</span>
+        <div className="flex items-center gap-2 sm:gap-3">
+          {/* 3 Lives / Hearts */}
+          <div className="flex items-center gap-1 bg-red-950/60 px-2.5 py-1 rounded-xl border border-red-500/60">
+            {[1, 2, 3].map((heartIdx) => (
+              <span
+                key={heartIdx}
+                className={`text-lg transition-transform ${
+                  heartIdx <= lives ? 'scale-100 text-rose-500' : 'scale-90 opacity-30 grayscale'
+                }`}
+              >
+                ❤️
+              </span>
+            ))}
           </div>
-          <div className="flex items-center gap-1.5 bg-yellow-500/30 px-3 py-1 rounded-xl border border-yellow-400">
-            <span className="text-xl">🪙</span>
-            <span className="font-bold text-lg text-yellow-300">{coinsCollected}</span>
+
+          <div className="flex items-center gap-1.5 bg-amber-500/30 px-2.5 py-1 rounded-xl border border-amber-400">
+            <span className="text-base sm:text-lg">⭐</span>
+            <span className="font-bold text-sm sm:text-base text-amber-300">{starsCollected}</span>
+          </div>
+          <div className="flex items-center gap-1.5 bg-yellow-500/30 px-2.5 py-1 rounded-xl border border-yellow-400">
+            <span className="text-base sm:text-lg">🪙</span>
+            <span className="font-bold text-sm sm:text-base text-yellow-300">{coinsCollected}</span>
           </div>
         </div>
 
