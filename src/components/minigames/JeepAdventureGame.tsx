@@ -4,14 +4,15 @@ import { drawCartoonJeep, drawStar, drawCoin } from '../../utils/drawHelpers';
 import { calculateStars } from '../../game/logic';
 import { sound } from '../../utils/audio';
 import confetti from 'canvas-confetti';
-import { ArrowLeft, ArrowRight, Pause, Play, RotateCcw, X } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Pause, Play, RotateCcw, X, Skull } from 'lucide-react';
 
 interface Props {
   level: LevelConfig;
   vehicle: string;
   onVictory: (stars: number, score: number, coins: number) => void;
-  onGameOver: (reason: 'lives' | 'timeout' | 'moves', score: number, progressPct: number) => void;
+  onGameOver: (reason: 'lives' | 'timeout' | 'moves' | 'mistakes' | 'crashed', score: number, progressPct: number) => void;
   onExit: () => void;
+  onRestart?: () => void;
 }
 
 interface Obstacle {
@@ -28,6 +29,14 @@ interface Pickup {
   collected: boolean;
 }
 
+interface FloatingText {
+  x: number;
+  y: number;
+  text: string;
+  color: string;
+  alpha: number;
+}
+
 export const JeepAdventureGame: React.FC<Props> = ({ level, vehicle, onVictory, onGameOver, onExit }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [score, setScore] = useState(0);
@@ -37,6 +46,7 @@ export const JeepAdventureGame: React.FC<Props> = ({ level, vehicle, onVictory, 
   const [isPaused, setIsPaused] = useState(false);
   const [timeLeft, setTimeLeft] = useState(level.timeLimitSeconds || 35);
   const [progressPercent, setProgressPercent] = useState(0);
+  const [damageFlash, setDamageFlash] = useState(false);
 
   const gameState = useRef({
     lane: 1, // 0: left, 1: center, 2: right
@@ -53,6 +63,7 @@ export const JeepAdventureGame: React.FC<Props> = ({ level, vehicle, onVictory, 
     fuel: 100,
     obstacles: [] as Obstacle[],
     pickups: [] as Pickup[],
+    floatingTexts: [] as FloatingText[],
     frame: 0,
     totalDuration: level.timeLimitSeconds || 35,
     elapsedSeconds: 0,
@@ -90,6 +101,21 @@ export const JeepAdventureGame: React.FC<Props> = ({ level, vehicle, onVictory, 
 
     gameState.current.obstacles = obs;
     gameState.current.pickups = picks;
+    gameState.current.floatingTexts = [];
+    gameState.current.lane = 1;
+    gameState.current.targetLane = 1;
+    gameState.current.jeepX = 320;
+    gameState.current.score = 0;
+    gameState.current.coins = 0;
+    gameState.current.stars = 0;
+    gameState.current.lives = 3;
+    gameState.current.elapsedSeconds = 0;
+    gameState.current.isFinished = false;
+    setLives(3);
+    setScore(0);
+    setCoinsCollected(0);
+    setStarsCollected(0);
+    setTimeLeft(level.timeLimitSeconds || 35);
   }, [level]);
 
   // Steer controls
@@ -109,14 +135,23 @@ export const JeepAdventureGame: React.FC<Props> = ({ level, vehicle, onVictory, 
     }
   };
 
-  // Keyboard navigation
+  // Immediate Out trigger
+  const triggerManualOut = () => {
+    if (gameState.current.isFinished) return;
+    gameState.current.isFinished = true;
+    gameState.current.lives = 0;
+    setLives(0);
+    sound.playGameOver();
+    const pct = Math.min(100, Math.floor((gameState.current.elapsedSeconds / gameState.current.totalDuration) * 100));
+    onGameOver('crashed', gameState.current.score, pct);
+  };
+
+  // Keyboard controls
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') {
-        e.preventDefault();
         steerLeft();
       } else if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') {
-        e.preventDefault();
         steerRight();
       } else if (e.key === 'Escape' || e.key === 'p' || e.key === 'P') {
         setIsPaused((p) => !p);
@@ -191,6 +226,16 @@ export const JeepAdventureGame: React.FC<Props> = ({ level, vehicle, onVictory, 
               setLives(s.lives);
               s.invincibleTimer = 45;
               sound.playHit();
+              setDamageFlash(true);
+              setTimeout(() => setDamageFlash(false), 200);
+
+              s.floatingTexts.push({
+                x: s.jeepX,
+                y: s.jeepY - 30,
+                text: '-1 ❤️ CRASH! 💥',
+                color: '#ef4444',
+                alpha: 1.0,
+              });
 
               // Check OUT / GAME OVER condition
               if (s.lives <= 0 && !s.isFinished) {
@@ -198,7 +243,7 @@ export const JeepAdventureGame: React.FC<Props> = ({ level, vehicle, onVictory, 
                 sound.playGameOver();
                 const pct = Math.min(100, Math.floor((s.elapsedSeconds / s.totalDuration) * 100));
                 setTimeout(() => {
-                  onGameOver('lives', s.score, pct);
+                  onGameOver('crashed', s.score, pct);
                 }, 600);
                 return;
               }
@@ -228,6 +273,13 @@ export const JeepAdventureGame: React.FC<Props> = ({ level, vehicle, onVictory, 
             setScore(s.score);
           }
         });
+
+        // Update floating texts
+        s.floatingTexts.forEach((ft) => {
+          ft.y -= 1.0;
+          ft.alpha -= 0.025;
+        });
+        s.floatingTexts = s.floatingTexts.filter((ft) => ft.alpha > 0);
 
         // Render Canvas
         const canvas = canvasRef.current;
@@ -260,15 +312,15 @@ export const JeepAdventureGame: React.FC<Props> = ({ level, vehicle, onVictory, 
             ctx.roundRect(120, 0, 400, canvas.height, 0);
             ctx.fill();
 
-            // Road borders (yellow safety curbs)
+            // Road edges
             ctx.fillStyle = '#eab308';
             ctx.fillRect(120, 0, 8, canvas.height);
             ctx.fillRect(512, 0, 8, canvas.height);
 
-            // Lane Dividers (dashed white lines)
-            ctx.strokeStyle = '#ffffff';
+            // Dashed Lane dividers
+            ctx.strokeStyle = '#f5f5f4';
             ctx.lineWidth = 4;
-            ctx.setLineDash([24, 20]);
+            ctx.setLineDash([20, 20]);
             ctx.lineDashOffset = -s.roadOffset;
 
             // Lane 1 divider
@@ -282,79 +334,90 @@ export const JeepAdventureGame: React.FC<Props> = ({ level, vehicle, onVictory, 
             ctx.moveTo(385, 0);
             ctx.lineTo(385, canvas.height);
             ctx.stroke();
+            ctx.setLineDash([]); // Reset dash
 
-            ctx.setLineDash([]); // reset
-
-            // Draw Pickups
+            // Draw Pickups (Stars, Coins, Fuel)
             s.pickups.forEach((pick) => {
-              if (!pick.collected && pick.y > -50 && pick.y < canvas.height + 50) {
+              if (!pick.collected && pick.y > -30 && pick.y < canvas.height + 30) {
                 const px = laneXCoordinates[pick.lane];
                 if (pick.type === 'coin') {
                   drawCoin(ctx, px, pick.y, 12, s.frame);
                 } else if (pick.type === 'star') {
-                  drawStar(ctx, px, pick.y, 14, 5, '#facc15');
-                } else if (pick.type === 'fuel') {
-                  // Cartoon Fuel Jerrycan
-                  ctx.fillStyle = '#ef4444';
+                  drawStar(ctx, px, pick.y, 14, 5, '#fbbf24');
+                } else {
+                  // Fuel can
+                  ctx.fillStyle = '#dc2626';
                   ctx.beginPath();
                   ctx.roundRect(px - 10, pick.y - 12, 20, 24, 4);
                   ctx.fill();
                   ctx.fillStyle = '#ffffff';
                   ctx.font = 'bold 10px sans-serif';
-                  ctx.fillText('⚡', px - 5, pick.y + 4);
+                  ctx.fillText('⛽', px - 6, pick.y + 4);
                 }
               }
             });
 
-            // Draw Obstacles
+            // Draw Obstacles (Mud, Cones, Rocks)
             s.obstacles.forEach((obs) => {
-              if (obs.y > -50 && obs.y < canvas.height + 50) {
+              if (obs.y > -40 && obs.y < canvas.height + 40) {
                 const ox = laneXCoordinates[obs.lane];
                 if (obs.type === 'mud') {
-                  // Friendly Mud Puddle
                   ctx.fillStyle = '#78350f';
                   ctx.beginPath();
-                  ctx.ellipse(ox, obs.y, 24, 12, 0, 0, Math.PI * 2);
+                  ctx.ellipse(ox, obs.y, 24, 14, 0, 0, Math.PI * 2);
                   ctx.fill();
-                  ctx.fillStyle = '#92400e';
-                  ctx.beginPath();
-                  ctx.ellipse(ox - 3, obs.y - 2, 14, 6, 0, 0, Math.PI * 2);
-                  ctx.fill();
+                  ctx.fillStyle = '#451a03';
+                  ctx.font = '14px sans-serif';
+                  ctx.fillText('💧', ox - 7, obs.y + 5);
                 } else if (obs.type === 'cone') {
-                  // Traffic Cone
-                  ctx.fillStyle = '#f97316';
+                  ctx.fillStyle = '#ea580c';
                   ctx.beginPath();
                   ctx.moveTo(ox, obs.y - 16);
-                  ctx.lineTo(ox + 12, obs.y + 12);
                   ctx.lineTo(ox - 12, obs.y + 12);
+                  ctx.lineTo(ox + 12, obs.y + 12);
                   ctx.closePath();
                   ctx.fill();
-                  // White stripe
+                  // White stripes on cone
                   ctx.fillStyle = '#ffffff';
-                  ctx.fillRect(ox - 7, obs.y - 2, 14, 4);
-                } else if (obs.type === 'rock') {
-                  // Round friendly boulder
+                  ctx.fillRect(ox - 6, obs.y - 2, 12, 4);
+                } else {
+                  // Rock boulder
+                  ctx.fillStyle = '#57534e';
+                  ctx.beginPath();
+                  ctx.ellipse(ox, obs.y, 18, 14, 0, 0, Math.PI * 2);
+                  ctx.fill();
                   ctx.fillStyle = '#78716c';
                   ctx.beginPath();
-                  ctx.arc(ox, obs.y, 15, 0, Math.PI * 2);
-                  ctx.fill();
-                  ctx.fillStyle = '#a8a29e';
-                  ctx.beginPath();
-                  ctx.arc(ox - 4, obs.y - 4, 6, 0, Math.PI * 2);
+                  ctx.arc(ox - 4, obs.y - 4, 8, 0, Math.PI * 2);
                   ctx.fill();
                 }
               }
             });
 
-            // Draw Cartoon Jeep (with damage flicker)
-            const bounce = Math.sin(s.frame * 0.3) * 2;
-            if (s.invincibleTimer <= 0 || s.invincibleTimer % 6 < 3) {
-              drawCartoonJeep(ctx, s.jeepX, s.jeepY, 1, vehicle, s.frame * 0.1, bounce);
+            // Draw Jeep Player
+            const isFlickering = s.invincibleTimer > 0 && Math.floor(s.frame / 4) % 2 === 0;
+            if (!isFlickering) {
+              drawCartoonJeep(ctx, s.jeepX, s.jeepY, 1, vehicle);
+            }
+
+            // Draw floating texts
+            s.floatingTexts.forEach((ft) => {
+              ctx.save();
+              ctx.globalAlpha = Math.max(0, ft.alpha);
+              ctx.font = 'bold 16px sans-serif';
+              ctx.fillStyle = ft.color;
+              ctx.fillText(ft.text, ft.x - 30, ft.y);
+              ctx.restore();
+            });
+
+            // Red Damage Flash overlay
+            if (damageFlash) {
+              ctx.fillStyle = 'rgba(239, 68, 68, 0.35)';
+              ctx.fillRect(0, 0, canvas.width, canvas.height);
             }
           }
         }
       }
-
       animId = requestAnimationFrame(loop);
     };
 
@@ -363,20 +426,20 @@ export const JeepAdventureGame: React.FC<Props> = ({ level, vehicle, onVictory, 
       cancelAnimationFrame(animId);
       clearInterval(timerId);
     };
-  }, [isPaused, level, vehicle, onVictory, onGameOver]);
+  }, [isPaused, level, vehicle]);
 
   return (
     <div className="relative w-full h-full flex flex-col items-center justify-between bg-emerald-950 p-2 sm:p-4 select-none">
       {/* Top HUD */}
-      <div className="w-full max-w-2xl bg-amber-950/90 border-2 border-amber-600 rounded-2xl px-4 py-2.5 flex items-center justify-between shadow-lg text-white">
-        <div className="flex items-center gap-2 sm:gap-3">
-          {/* 3 Lives / Hearts */}
-          <div className="flex items-center gap-1 bg-red-950/60 px-2.5 py-1 rounded-xl border border-red-500/60">
-            {[1, 2, 3].map((heartIdx) => (
+      <div className="w-full max-w-2xl bg-emerald-900/90 border-2 border-emerald-600 rounded-2xl px-4 py-2.5 flex items-center justify-between shadow-lg text-white">
+        <div className="flex items-center gap-3">
+          {/* Hearts / Lives */}
+          <div className="flex items-center gap-1 bg-red-950/60 px-3 py-1 rounded-xl border border-red-500/50">
+            {[1, 2, 3].map((heartIndex) => (
               <span
-                key={heartIdx}
-                className={`text-lg transition-transform ${
-                  heartIdx <= lives ? 'scale-100 text-rose-500' : 'scale-90 opacity-30 grayscale'
+                key={heartIndex}
+                className={`text-xl transition-all duration-300 ${
+                  heartIndex <= lives ? 'scale-100 opacity-100' : 'scale-75 opacity-30 grayscale'
                 }`}
               >
                 ❤️
@@ -384,37 +447,44 @@ export const JeepAdventureGame: React.FC<Props> = ({ level, vehicle, onVictory, 
             ))}
           </div>
 
-          <div className="flex items-center gap-1.5 bg-amber-500/30 px-2.5 py-1 rounded-xl border border-amber-400">
-            <span className="text-base sm:text-lg">⭐</span>
-            <span className="font-bold text-sm sm:text-base text-amber-300">{starsCollected}</span>
+          <div className="flex items-center gap-1.5 bg-amber-500/30 px-3 py-1 rounded-xl border border-amber-400">
+            <span className="text-xl">⭐</span>
+            <span className="font-bold text-lg text-amber-300">{score}</span>
           </div>
-          <div className="flex items-center gap-1.5 bg-yellow-500/30 px-2.5 py-1 rounded-xl border border-yellow-400">
-            <span className="text-base sm:text-lg">🪙</span>
-            <span className="font-bold text-sm sm:text-base text-yellow-300">{coinsCollected}</span>
+
+          <div className="hidden sm:flex items-center gap-1 bg-yellow-500/20 px-2.5 py-1 rounded-xl border border-yellow-400/40">
+            <span className="text-sm">🪙</span>
+            <span className="font-bold text-sm text-yellow-200">{coinsCollected}</span>
           </div>
         </div>
 
-        <div className="flex flex-col items-center flex-1 max-w-[160px] mx-2">
-          <span className="text-xs font-semibold text-amber-200">Time Left: {timeLeft}s</span>
-          <div className="w-full bg-amber-950 rounded-full h-3.5 border border-amber-700 overflow-hidden">
-            <div
-              className="bg-gradient-to-r from-amber-400 to-green-400 h-full transition-all duration-300"
-              style={{ width: `${progressPercent}%` }}
-            />
-          </div>
-        </div>
-
+        {/* Progress Bar & Actions */}
         <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 bg-sky-500/20 px-2.5 py-1 rounded-xl border border-sky-400/40">
+            <span className="text-sm">⏳</span>
+            <span className="font-bold text-sm text-sky-200">{timeLeft}s</span>
+          </div>
+
+          {/* Direct OUT / Game Over Test button */}
+          <button
+            onClick={triggerManualOut}
+            title="आउट टेस्ट (Test Game Over)"
+            className="flex items-center gap-1 px-2.5 py-1.5 bg-red-600/90 hover:bg-red-500 active:scale-95 rounded-xl border border-red-400 text-xs font-black shadow-md cursor-pointer text-white"
+          >
+            <Skull size={15} />
+            <span className="hidden xs:inline">OUT</span>
+          </button>
+
           <button
             onClick={() => setIsPaused((p) => !p)}
-            className="p-2 bg-amber-800 hover:bg-amber-700 active:scale-95 rounded-xl border border-amber-600"
+            className="p-2 bg-emerald-800 hover:bg-emerald-700 active:scale-95 rounded-xl border border-emerald-600 cursor-pointer"
             aria-label={isPaused ? 'Resume Game' : 'Pause Game'}
           >
             {isPaused ? <Play size={20} /> : <Pause size={20} />}
           </button>
           <button
             onClick={onExit}
-            className="p-2 bg-red-700/80 hover:bg-red-600 active:scale-95 rounded-xl border border-red-500"
+            className="p-2 bg-red-700/80 hover:bg-red-600 active:scale-95 rounded-xl border border-red-500 cursor-pointer"
             aria-label="Exit Game"
           >
             <X size={20} />
@@ -428,55 +498,43 @@ export const JeepAdventureGame: React.FC<Props> = ({ level, vehicle, onVictory, 
           ref={canvasRef}
           width={640}
           height={340}
-          className="w-full h-auto max-h-[360px] rounded-2xl shadow-2xl border-4 border-amber-700/80 aspect-[16/9] object-contain bg-emerald-900"
+          className="w-full h-auto max-h-[360px] rounded-2xl shadow-2xl border-4 border-emerald-700/80 aspect-[16/9] object-contain bg-emerald-900"
         />
 
         {isPaused && (
-          <div className="absolute inset-0 bg-amber-950/85 backdrop-blur-xs rounded-2xl flex flex-col items-center justify-center gap-4 z-20">
+          <div className="absolute inset-0 bg-emerald-950/85 backdrop-blur-xs rounded-2xl flex flex-col items-center justify-center gap-4 z-20">
             <h3 className="text-3xl font-extrabold text-amber-300">Adventure Paused</h3>
-            <div className="flex gap-4">
+            <div className="flex flex-wrap justify-center gap-3">
               <button
                 onClick={() => setIsPaused(false)}
-                className="px-6 py-3 bg-amber-600 hover:bg-amber-500 text-white font-bold rounded-2xl shadow-lg border-b-4 border-amber-800 flex items-center gap-2"
+                className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-2xl shadow-lg border-b-4 border-emerald-800 flex items-center gap-2"
               >
-                <Play size={22} /> Resume
+                <Play size={20} /> Resume
               </button>
               <button
-                onClick={() => {
-                  setTimeLeft(level.timeLimitSeconds || 35);
-                  gameState.current.score = 0;
-                  gameState.current.coins = 0;
-                  gameState.current.stars = 0;
-                  gameState.current.isFinished = false;
-                  setScore(0);
-                  setCoinsCollected(0);
-                  setStarsCollected(0);
-                  setIsPaused(false);
-                }}
-                className="px-6 py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-2xl shadow-lg border-b-4 border-emerald-800 flex items-center gap-2"
+                onClick={triggerManualOut}
+                className="px-5 py-2.5 bg-red-600 hover:bg-red-500 text-white font-bold rounded-2xl shadow-lg border-b-4 border-red-800 flex items-center gap-2"
               >
-                <RotateCcw size={22} /> Restart
+                <Skull size={20} /> Give Up / Out
               </button>
             </div>
           </div>
         )}
       </div>
 
-      {/* Touch Steering Buttons */}
+      {/* Touch Steering Controls */}
       <div className="w-full max-w-2xl grid grid-cols-2 gap-4 pb-2">
         <button
           onClick={steerLeft}
-          className="py-4 bg-gradient-to-b from-amber-500 to-amber-700 active:from-amber-600 active:to-amber-800 text-white font-extrabold text-xl rounded-2xl shadow-xl border-b-4 border-amber-900 flex items-center justify-center gap-2 active:translate-y-1 active:border-b-0"
+          className="py-4 bg-gradient-to-b from-emerald-600 to-emerald-800 active:from-emerald-700 active:to-emerald-900 text-white font-extrabold text-lg rounded-2xl shadow-xl border-b-4 border-emerald-950 flex items-center justify-center gap-2 active:translate-y-1 active:border-b-0"
         >
-          <ArrowLeft size={30} className="stroke-[3]" />
-          STEER LEFT
+          <ArrowLeft size={28} className="stroke-[3]" /> STEER LEFT
         </button>
         <button
           onClick={steerRight}
-          className="py-4 bg-gradient-to-b from-amber-500 to-amber-700 active:from-amber-600 active:to-amber-800 text-white font-extrabold text-xl rounded-2xl shadow-xl border-b-4 border-amber-900 flex items-center justify-center gap-2 active:translate-y-1 active:border-b-0"
+          className="py-4 bg-gradient-to-b from-emerald-600 to-emerald-800 active:from-emerald-700 active:to-emerald-900 text-white font-extrabold text-lg rounded-2xl shadow-xl border-b-4 border-emerald-950 flex items-center justify-center gap-2 active:translate-y-1 active:border-b-0"
         >
-          STEER RIGHT
-          <ArrowRight size={30} className="stroke-[3]" />
+          STEER RIGHT <ArrowRight size={28} className="stroke-[3]" />
         </button>
       </div>
     </div>

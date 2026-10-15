@@ -80,6 +80,9 @@ export default function App() {
   // Android Phone Frame toggle (enabled on desktop for authentic mobile preview, toggleable)
   const [isPhoneFrame, setIsPhoneFrame] = useState(false);
 
+  // Fresh game instance session counter
+  const [gameSessionId, setGameSessionId] = useState(0);
+
   // Sync profile to localStorage on change
   useEffect(() => {
     saveProfile(profile);
@@ -111,6 +114,7 @@ export default function App() {
 
   // Play Game Handler (plays current highest unlocked level)
   const handlePlayGame = useCallback(() => {
+    setGameSessionId((s) => s + 1);
     const targetLvl = LEVELS.find((l) => l.id === profile.unlockedLevel) || LEVELS[0];
     setCurrentLevel(targetLvl);
     setGameState('playing');
@@ -146,6 +150,7 @@ export default function App() {
 
   // Launch a selected level
   const handleSelectLevel = (level: LevelConfig) => {
+    setGameSessionId((s) => s + 1);
     setCurrentLevel(level);
     setActiveModal(null);
     setGameState('playing');
@@ -153,6 +158,7 @@ export default function App() {
 
   // Launch selected mini-game (picks first level of that game or unlocked level)
   const handleSelectMiniGame = (gameId: MiniGameId) => {
+    setGameSessionId((s) => s + 1);
     const match = LEVELS.find((l) => l.gameId === gameId) || LEVELS[0];
     setCurrentLevel(match);
     setActiveModal(null);
@@ -233,6 +239,7 @@ export default function App() {
   // Render the active mini-game
   const renderMiniGame = () => {
     const props = {
+      key: `${currentLevel.id}-${gameSessionId}`,
       level: currentLevel,
       character: profile.activeCharacter,
       vehicle: profile.activeVehicle,
@@ -240,6 +247,7 @@ export default function App() {
       onGameOver: handleLevelGameOver,
       onExit: () => setGameState('menu'),
       onRestart: () => {
+        setGameSessionId((s) => s + 1);
         setGameState('playing');
       },
     };
@@ -326,7 +334,10 @@ export default function App() {
             reason={gameOverData.reason}
             score={gameOverData.score}
             progressPercent={gameOverData.progressPercent}
-            onRetry={() => setGameState('playing')}
+            onRetry={() => {
+              setGameSessionId((s) => s + 1);
+              setGameState('playing');
+            }}
             onHome={() => setGameState('menu')}
           />
         )}

@@ -3,13 +3,14 @@ import { LevelConfig } from '../../types/game';
 import { calculateStars } from '../../game/logic';
 import { sound } from '../../utils/audio';
 import confetti from 'canvas-confetti';
-import { RotateCcw, X, Check } from 'lucide-react';
+import { RotateCcw, X, Check, Skull } from 'lucide-react';
 
 interface Props {
   level: LevelConfig;
   onVictory: (stars: number, score: number, coins: number) => void;
-  onGameOver?: (reason: 'lives' | 'timeout' | 'moves', score: number, progressPct: number) => void;
+  onGameOver: (reason: 'lives' | 'timeout' | 'moves' | 'mistakes' | 'crashed', score: number, progressPct: number) => void;
   onExit: () => void;
+  onRestart?: () => void;
 }
 
 interface PuzzlePart {
@@ -21,7 +22,7 @@ interface PuzzlePart {
   targetSlot: number;
 }
 
-export const PuzzleCampGame: React.FC<Props> = ({ level, onVictory, onExit }) => {
+export const PuzzleCampGame: React.FC<Props> = ({ level, onVictory, onGameOver, onExit }) => {
   const isHelicopter = level.id >= 15;
   const puzzleTitle = isHelicopter ? 'Rescue Helicopter' : 'Friendly Army Jeep';
 
@@ -44,25 +45,64 @@ export const PuzzleCampGame: React.FC<Props> = ({ level, onVictory, onExit }) =>
   const [parts, setParts] = useState<PuzzlePart[]>([]);
   const [selectedPartId, setSelectedPartId] = useState<string | null>(null);
   const [placedCount, setPlacedCount] = useState(0);
+  const [lives, setLives] = useState(3);
+  const [timeLeft, setTimeLeft] = useState(level.timeLimitSeconds || 40);
+  const [isFinished, setIsFinished] = useState(false);
 
   const resetPuzzle = () => {
     setParts(defaultParts.map((p) => ({ ...p, placed: false })));
     setSelectedPartId(null);
     setPlacedCount(0);
+    setLives(3);
+    setTimeLeft(level.timeLimitSeconds || 40);
+    setIsFinished(false);
   };
 
   useEffect(() => {
     resetPuzzle();
   }, [level]);
 
+  // Timer loop
+  useEffect(() => {
+    const timerId = setInterval(() => {
+      if (!isFinished) {
+        setTimeLeft((prev) => {
+          const next = prev - 1;
+          if (next <= 0 && !isFinished) {
+            setIsFinished(true);
+            sound.playGameOver();
+            const pct = Math.min(90, Math.floor((placedCount / defaultParts.length) * 100));
+            setTimeout(() => {
+              onGameOver('timeout', placedCount * 25, pct);
+            }, 600);
+            return 0;
+          }
+          return next;
+        });
+      }
+    }, 1000);
+
+    return () => clearInterval(timerId);
+  }, [isFinished, placedCount, defaultParts.length]);
+
+  // Immediate Out trigger
+  const triggerManualOut = () => {
+    if (isFinished) return;
+    setIsFinished(true);
+    setLives(0);
+    sound.playGameOver();
+    const pct = Math.min(90, Math.floor((placedCount / parts.length) * 100));
+    onGameOver('mistakes', placedCount * 25, pct);
+  };
+
   const handleSelectTrayPart = (part: PuzzlePart) => {
-    if (part.placed) return;
+    if (part.placed || isFinished) return;
     setSelectedPartId(part.id);
     sound.playCardFlip();
   };
 
   const handleSlotClick = (slotIdx: number) => {
-    if (!selectedPartId) return;
+    if (!selectedPartId || isFinished) return;
     const part = parts.find((p) => p.id === selectedPartId);
     if (!part || part.placed) return;
 
@@ -77,6 +117,7 @@ export const PuzzleCampGame: React.FC<Props> = ({ level, onVictory, onExit }) =>
 
       if (nextCount >= parts.length) {
         // Assembled completely!
+        setIsFinished(true);
         const score = 100 + parts.length * 20;
         const earnedStars = calculateStars(score, level.targetStarsScore);
         sound.playVictory();
@@ -88,7 +129,19 @@ export const PuzzleCampGame: React.FC<Props> = ({ level, onVictory, onExit }) =>
         }, 1200);
       }
     } else {
+      // Wrong slot click -> deduct 1 Heart!
       sound.playTryAgain();
+      const nextLives = lives - 1;
+      setLives(nextLives);
+
+      if (nextLives <= 0) {
+        setIsFinished(true);
+        sound.playGameOver();
+        const pct = Math.min(90, Math.floor((placedCount / parts.length) * 100));
+        setTimeout(() => {
+          onGameOver('mistakes', placedCount * 25, pct);
+        }, 600);
+      }
     }
   };
 
@@ -97,28 +150,54 @@ export const PuzzleCampGame: React.FC<Props> = ({ level, onVictory, onExit }) =>
       {/* Top HUD */}
       <div className="w-full max-w-2xl bg-indigo-900/90 border-2 border-indigo-600 rounded-2xl px-4 py-2.5 flex items-center justify-between shadow-lg text-white">
         <div className="flex items-center gap-3">
+          {/* Hearts / Lives */}
+          <div className="flex items-center gap-1 bg-red-950/60 px-2.5 py-1 rounded-xl border border-red-500/50">
+            {[1, 2, 3].map((heartIndex) => (
+              <span
+                key={heartIndex}
+                className={`text-lg transition-all duration-300 ${
+                  heartIndex <= lives ? 'scale-100 opacity-100' : 'scale-75 opacity-30 grayscale'
+                }`}
+              >
+                ❤️
+              </span>
+            ))}
+          </div>
+
           <div className="flex items-center gap-1.5 bg-amber-500/30 px-3 py-1 rounded-xl border border-amber-400">
             <span className="text-xl">⭐</span>
             <span className="font-bold text-lg text-amber-300">
               {placedCount} / {parts.length} Parts
             </span>
           </div>
-          <div className="font-bold text-indigo-200 text-sm">
-            {puzzleTitle}
+
+          <div className="flex items-center gap-1 bg-sky-500/20 px-2.5 py-1 rounded-xl border border-sky-400/40">
+            <span className="text-sm">⏳</span>
+            <span className="font-bold text-sm text-sky-200">{timeLeft}s</span>
           </div>
         </div>
 
         <div className="flex items-center gap-2">
+          {/* Direct OUT / Game Over Test button */}
+          <button
+            onClick={triggerManualOut}
+            title="आउट टेस्ट (Test Game Over)"
+            className="flex items-center gap-1 px-2.5 py-1.5 bg-red-600/90 hover:bg-red-500 active:scale-95 rounded-xl border border-red-400 text-xs font-black shadow-md cursor-pointer text-white"
+          >
+            <Skull size={15} />
+            <span className="hidden xs:inline">OUT</span>
+          </button>
+
           <button
             onClick={resetPuzzle}
-            className="p-2 bg-indigo-800 hover:bg-indigo-700 active:scale-95 rounded-xl border border-indigo-600"
+            className="p-2 bg-indigo-800 hover:bg-indigo-700 active:scale-95 rounded-xl border border-indigo-600 cursor-pointer"
             aria-label="Restart Puzzle"
           >
             <RotateCcw size={20} />
           </button>
           <button
             onClick={onExit}
-            className="p-2 bg-red-700/80 hover:bg-red-600 active:scale-95 rounded-xl border border-red-500"
+            className="p-2 bg-red-700/80 hover:bg-red-600 active:scale-95 rounded-xl border border-red-500 cursor-pointer"
             aria-label="Exit Game"
           >
             <X size={20} />
@@ -130,7 +209,9 @@ export const PuzzleCampGame: React.FC<Props> = ({ level, onVictory, onExit }) =>
       <div className="relative w-full max-w-lg flex-1 flex flex-col items-center justify-center p-2">
         <div className="w-full bg-slate-900/90 rounded-3xl border-4 border-indigo-500 p-4 shadow-2xl flex flex-col items-center">
           <h4 className="text-indigo-200 font-bold mb-3 text-sm">
-            {placedCount === parts.length ? '🎉 All Assembled!' : 'Tap part below, then tap matching slot!'}
+            {placedCount === parts.length
+              ? '🎉 All Assembled!'
+              : 'Tap part below, then tap matching slot! 3 mistakes = OUT!'}
           </h4>
 
           {/* Blueprint slots */}
@@ -140,73 +221,70 @@ export const PuzzleCampGame: React.FC<Props> = ({ level, onVictory, onExit }) =>
 
               return (
                 <button
-                  key={p.id}
+                  key={`slot-${idx}`}
                   onClick={() => handleSlotClick(idx)}
-                  className={`aspect-square rounded-2xl border-2 flex flex-col items-center justify-center transition-all duration-200 relative
-                    ${
-                      isFilled
-                        ? 'bg-emerald-600/90 border-emerald-400 scale-100 shadow-md'
-                        : selectedPartId === p.id
-                        ? 'bg-indigo-700/60 border-amber-400 border-dashed animate-pulse ring-2 ring-amber-400'
-                        : 'bg-indigo-950/80 border-indigo-500/50 border-dashed hover:border-indigo-400'
-                    }`}
+                  className={`aspect-square rounded-2xl flex flex-col items-center justify-center border-2 border-dashed transition-all duration-200 cursor-pointer relative ${
+                    isFilled
+                      ? 'bg-emerald-600/60 border-emerald-400'
+                      : selectedPartId
+                      ? 'bg-indigo-900/40 border-amber-400 hover:bg-indigo-800/60 animate-pulse'
+                      : 'bg-slate-800/50 border-slate-600'
+                  }`}
                 >
                   {isFilled ? (
-                    <div className="flex flex-col items-center">
+                    <>
                       <span className="text-3xl">{p.icon}</span>
-                      <Check size={16} className="text-emerald-200 mt-1 stroke-[3]" />
-                    </div>
+                      <span className="text-[10px] font-bold text-emerald-200 mt-1 line-clamp-1">
+                        {p.name}
+                      </span>
+                      <div className="absolute top-1 right-1 w-4 h-4 rounded-full bg-emerald-400 text-stone-900 flex items-center justify-center">
+                        <Check size={12} className="stroke-[3]" />
+                      </div>
+                    </>
                   ) : (
                     <div className="flex flex-col items-center opacity-40">
-                      <span className="text-2xl filter grayscale">{p.icon}</span>
-                      <span className="text-[10px] text-indigo-300 mt-1">Slot {idx + 1}</span>
+                      <span className="text-xl">🔲</span>
+                      <span className="text-[10px] text-slate-400 mt-0.5">Slot {idx + 1}</span>
                     </div>
                   )}
                 </button>
               );
             })}
           </div>
-
-          {/* Big Cartoon Vehicle Reveal when assembled */}
-          {placedCount === parts.length && (
-            <div className="mt-4 animate-bounce text-6xl">
-              {isHelicopter ? '🚁💨' : '🚙💨'}
-            </div>
-          )}
         </div>
       </div>
 
       {/* Parts Tray at bottom */}
-      <div className="w-full max-w-lg bg-indigo-900/90 border-2 border-indigo-600 rounded-3xl p-3 shadow-xl">
-        <div className="text-xs font-semibold text-indigo-200 mb-2 px-1">
-          Parts Tray (Tap to Pick):
-        </div>
-        <div className="grid grid-cols-5 gap-2">
+      <div className="w-full max-w-lg bg-indigo-900/80 border-2 border-indigo-600 rounded-3xl p-3 flex flex-col items-center shadow-xl mb-1">
+        <div className="text-xs font-extrabold text-amber-300 mb-2">Parts Tray (Choose a part):</div>
+        <div className="flex flex-wrap items-center justify-center gap-2.5">
           {parts.map((part) => {
             const isSelected = selectedPartId === part.id;
             const isPlaced = part.placed;
+
+            if (isPlaced) return null;
 
             return (
               <button
                 key={part.id}
                 onClick={() => handleSelectTrayPart(part)}
-                disabled={isPlaced}
-                className={`py-3 px-1 rounded-2xl border-2 flex flex-col items-center justify-center transition-all duration-150 active:scale-95
-                  ${
-                    isPlaced
-                      ? 'opacity-20 border-transparent bg-indigo-950 cursor-not-allowed'
-                      : isSelected
-                      ? 'bg-amber-500 border-amber-300 ring-4 ring-amber-300/50 scale-105'
-                      : 'bg-indigo-800 hover:bg-indigo-700 border-indigo-500 cursor-pointer'
-                  }`}
+                className={`px-3 py-2 rounded-2xl flex items-center gap-2 border-2 transition-all duration-200 font-extrabold text-xs shadow-md cursor-pointer ${
+                  isSelected
+                    ? 'bg-amber-400 text-stone-900 border-amber-300 scale-105 shadow-amber-500/50'
+                    : 'bg-indigo-800 hover:bg-indigo-700 text-white border-indigo-500'
+                }`}
               >
-                <span className="text-2xl sm:text-3xl">{part.icon}</span>
-                <span className="text-[9px] font-bold text-white truncate max-w-[50px] mt-1">
-                  {part.name}
-                </span>
+                <span className="text-xl">{part.icon}</span>
+                <span>{part.name}</span>
               </button>
             );
           })}
+
+          {placedCount === parts.length && (
+            <div className="text-emerald-300 font-black text-sm py-1">
+              Mission accomplished! Ready for deployment! 🚀
+            </div>
+          )}
         </div>
       </div>
     </div>

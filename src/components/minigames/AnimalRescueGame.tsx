@@ -3,13 +3,14 @@ import { LevelConfig } from '../../types/game';
 import { calculateStars } from '../../game/logic';
 import { sound } from '../../utils/audio';
 import confetti from 'canvas-confetti';
-import { ArrowUp, ArrowDown, ArrowLeft, ArrowRight, RotateCcw, X, Heart } from 'lucide-react';
+import { ArrowUp, ArrowDown, ArrowLeft, ArrowRight, RotateCcw, X, Heart, Skull } from 'lucide-react';
 
 interface Props {
   level: LevelConfig;
   onVictory: (stars: number, score: number, coins: number) => void;
-  onGameOver: (reason: 'lives' | 'timeout' | 'moves', score: number, progressPct: number) => void;
+  onGameOver: (reason: 'lives' | 'timeout' | 'moves' | 'mistakes' | 'crashed', score: number, progressPct: number) => void;
   onExit: () => void;
+  onRestart?: () => void;
 }
 
 interface Tile {
@@ -23,9 +24,11 @@ export const AnimalRescueGame: React.FC<Props> = ({ level, onVictory, onGameOver
   const [animalPos, setAnimalPos] = useState({ x: 0, y: 0 });
   const [grid, setGrid] = useState<Tile[][]>([]);
   const [movesCount, setMovesCount] = useState(0);
+  const [lives, setLives] = useState(3);
   const [treatsCollected, setTreatsCollected] = useState(0);
   const [starsCollected, setStarsCollected] = useState(0);
   const [isWon, setIsWon] = useState(false);
+  const [damageFlash, setDamageFlash] = useState(false);
 
   const maxMoves = level.id >= 19 ? 18 : level.id >= 13 ? 16 : 14;
 
@@ -57,7 +60,6 @@ export const AnimalRescueGame: React.FC<Props> = ({ level, onVictory, onGameOver
 
     // Obstacles depending on level
     if (level.id >= 13) {
-      // rocks & water
       newGrid[1][2].type = 'rock';
       newGrid[2][4].type = 'rock';
       newGrid[3][1].type = 'rock';
@@ -67,7 +69,6 @@ export const AnimalRescueGame: React.FC<Props> = ({ level, onVictory, onGameOver
       newGrid[0][3].type = 'star';
       newGrid[4][2].type = 'star';
     } else {
-      // simpler layout for level 5
       newGrid[1][1].type = 'rock';
       newGrid[3][3].type = 'rock';
       newGrid[0][2].type = 'treat';
@@ -78,6 +79,7 @@ export const AnimalRescueGame: React.FC<Props> = ({ level, onVictory, onGameOver
 
     setGrid(newGrid);
     setMovesCount(0);
+    setLives(3);
     setTreatsCollected(0);
     setStarsCollected(0);
     setIsWon(false);
@@ -87,6 +89,19 @@ export const AnimalRescueGame: React.FC<Props> = ({ level, onVictory, onGameOver
     setupBoard();
   }, [level]);
 
+  // Immediate Out trigger
+  const triggerManualOut = () => {
+    if (isWon) return;
+    setIsWon(true);
+    setLives(0);
+    sound.playGameOver();
+    const score = treatsCollected * 20 + starsCollected * 30;
+    const distFromStart = animalPos.x + animalPos.y;
+    const totalDist = cols - 1 + (rows - 1);
+    const pct = Math.min(95, Math.floor((distFromStart / totalDist) * 100));
+    onGameOver('lives', score, pct);
+  };
+
   const moveAnimal = (dx: number, dy: number) => {
     if (isWon) return;
     const nx = animalPos.x + dx;
@@ -95,10 +110,27 @@ export const AnimalRescueGame: React.FC<Props> = ({ level, onVictory, onGameOver
     // Check bounds
     if (nx < 0 || nx >= cols || ny < 0 || ny >= rows) return;
 
-    // Check rock obstacle
+    // Check rock obstacle - bumping into rock deals 1 Heart damage!
     const targetTile = grid[ny][nx];
     if (targetTile.type === 'rock') {
       sound.playHit();
+      setDamageFlash(true);
+      setTimeout(() => setDamageFlash(false), 200);
+
+      const nextLives = lives - 1;
+      setLives(nextLives);
+
+      if (nextLives <= 0) {
+        setIsWon(true);
+        sound.playGameOver();
+        const score = treatsCollected * 20 + starsCollected * 30;
+        const distFromStart = animalPos.x + animalPos.y;
+        const totalDist = cols - 1 + (rows - 1);
+        const pct = Math.min(95, Math.floor((distFromStart / totalDist) * 100));
+        setTimeout(() => {
+          onGameOver('lives', score, pct);
+        }, 600);
+      }
       return;
     }
 
@@ -140,7 +172,7 @@ export const AnimalRescueGame: React.FC<Props> = ({ level, onVictory, onGameOver
       sound.playGameOver();
       const score = treatsCollected * 20 + starsCollected * 30;
       const distFromStart = nx + ny;
-      const totalDist = (cols - 1) + (rows - 1);
+      const totalDist = cols - 1 + (rows - 1);
       const pct = Math.min(95, Math.floor((distFromStart / totalDist) * 100));
       setTimeout(() => {
         onGameOver('moves', score, pct);
@@ -158,38 +190,63 @@ export const AnimalRescueGame: React.FC<Props> = ({ level, onVictory, onGameOver
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [animalPos, grid, isWon]);
+  }, [animalPos, movesCount, lives, isWon]);
 
   return (
-    <div className="relative w-full h-full flex flex-col items-center justify-between bg-lime-950 p-2 sm:p-4 select-none">
+    <div className={`relative w-full h-full flex flex-col items-center justify-between bg-emerald-950 p-2 sm:p-4 select-none ${damageFlash ? 'bg-red-950' : ''}`}>
       {/* Top HUD */}
-      <div className="w-full max-w-2xl bg-lime-900/90 border-2 border-lime-600 rounded-2xl px-4 py-2.5 flex items-center justify-between shadow-lg text-white">
+      <div className="w-full max-w-2xl bg-emerald-900/90 border-2 border-emerald-600 rounded-2xl px-4 py-2 flex items-center justify-between shadow-lg text-white">
         <div className="flex items-center gap-3">
-          <div className="flex items-center gap-1.5 bg-amber-500/30 px-3 py-1 rounded-xl border border-amber-400">
-            <span className="text-xl">⭐</span>
-            <span className="font-bold text-lg text-amber-300">{starsCollected}</span>
+          {/* Hearts / Lives */}
+          <div className="flex items-center gap-1 bg-red-950/60 px-2.5 py-1 rounded-xl border border-red-500/50">
+            {[1, 2, 3].map((heartIndex) => (
+              <span
+                key={heartIndex}
+                className={`text-lg transition-all duration-300 ${
+                  heartIndex <= lives ? 'scale-100 opacity-100' : 'scale-75 opacity-30 grayscale'
+                }`}
+              >
+                ❤️
+              </span>
+            ))}
           </div>
-          <div className="flex items-center gap-1.5 bg-lime-500/30 px-3 py-1 rounded-xl border border-lime-400">
-            <span className="text-xl">{treatEmoji}</span>
-            <span className="font-bold text-lg text-lime-200">{treatsCollected}</span>
-          </div>
-        </div>
 
-        <div className="flex items-center gap-2 text-emerald-200 font-bold text-sm">
-          <span>🐾 Steps: {movesCount} / {maxMoves}</span>
+          <div className="flex items-center gap-1.5 bg-amber-500/30 px-3 py-1 rounded-xl border border-amber-400">
+            <span className="text-xl">{treatEmoji}</span>
+            <span className="font-bold text-lg text-amber-300">
+              {treatsCollected}
+            </span>
+          </div>
+
+          <div className="flex items-center gap-1.5 bg-sky-500/20 px-3 py-1 rounded-xl border border-sky-400/40">
+            <span className="text-sm">🐾</span>
+            <span className="font-bold text-sm text-sky-200">
+              {maxMoves - movesCount} left
+            </span>
+          </div>
         </div>
 
         <div className="flex items-center gap-2">
+          {/* Direct OUT / Game Over Test button */}
+          <button
+            onClick={triggerManualOut}
+            title="आउट टेस्ट (Test Game Over)"
+            className="flex items-center gap-1 px-2.5 py-1.5 bg-red-600/90 hover:bg-red-500 active:scale-95 rounded-xl border border-red-400 text-xs font-black shadow-md cursor-pointer text-white"
+          >
+            <Skull size={15} />
+            <span className="hidden xs:inline">OUT</span>
+          </button>
+
           <button
             onClick={setupBoard}
-            className="p-2 bg-lime-800 hover:bg-lime-700 active:scale-95 rounded-xl border border-lime-600"
+            className="p-2 bg-emerald-800 hover:bg-emerald-700 active:scale-95 rounded-xl border border-emerald-600 cursor-pointer"
             aria-label="Restart Puzzle"
           >
             <RotateCcw size={20} />
           </button>
           <button
             onClick={onExit}
-            className="p-2 bg-red-700/80 hover:bg-red-600 active:scale-95 rounded-xl border border-red-500"
+            className="p-2 bg-red-700/80 hover:bg-red-600 active:scale-95 rounded-xl border border-red-500 cursor-pointer"
             aria-label="Exit Game"
           >
             <X size={20} />
@@ -197,20 +254,19 @@ export const AnimalRescueGame: React.FC<Props> = ({ level, onVictory, onGameOver
         </div>
       </div>
 
-      {/* Guide Banner */}
-      <div className="w-full max-w-2xl text-center py-1">
-        <span className="inline-flex items-center gap-2 bg-lime-900/80 px-4 py-1.5 rounded-full border border-lime-500 text-lime-100 font-bold text-sm shadow-md">
-          <Heart size={16} className="text-rose-400 fill-rose-400" />
-          Help {animalName} reach the Cozy Tent 🏕️ safely!
-        </span>
-      </div>
+      {/* Grid Gameboard */}
+      <div className="relative w-full max-w-md flex-1 flex flex-col items-center justify-center p-2">
+        <div className="text-emerald-200 font-extrabold text-xs mb-2">
+          Lead {animalName} to the Camp Tent before running out of steps or hearts!
+        </div>
 
-      {/* Playable Grid */}
-      <div className="relative w-full max-w-xl flex-1 flex items-center justify-center p-2">
-        <div className="grid grid-cols-6 gap-2 w-full max-w-md aspect-[6/5] bg-emerald-900/90 p-3 rounded-3xl border-4 border-lime-600 shadow-2xl">
-          {grid.map((row, r) =>
-            row.map((tile, c) => {
-              const isAnimalHere = animalPos.x === c && animalPos.y === r;
+        <div
+          className="grid gap-2 p-3 bg-emerald-900/80 rounded-3xl border-4 border-emerald-600 shadow-2xl"
+          style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}
+        >
+          {grid.map((row, rIdx) =>
+            row.map((tile, cIdx) => {
+              const isAnimalHere = animalPos.x === cIdx && animalPos.y === rIdx;
               const isTent = tile.type === 'tent';
               const isRock = tile.type === 'rock';
               const isBridge = tile.type === 'bridge';
@@ -218,74 +274,66 @@ export const AnimalRescueGame: React.FC<Props> = ({ level, onVictory, onGameOver
               const isStar = tile.type === 'star' && !tile.collected;
 
               return (
-                <div
-                  key={`${r}-${c}`}
+                <button
+                  key={`${rIdx}-${cIdx}`}
                   onClick={() => {
-                    const dx = c - animalPos.x;
-                    const dy = r - animalPos.y;
+                    const dx = cIdx - animalPos.x;
+                    const dy = rIdx - animalPos.y;
                     if (Math.abs(dx) + Math.abs(dy) === 1) {
                       moveAnimal(dx, dy);
                     }
                   }}
-                  className={`relative flex items-center justify-center rounded-2xl border-2 transition-all duration-150 cursor-pointer shadow-sm
-                    ${
-                      isTent
-                        ? 'bg-amber-800/80 border-amber-400'
-                        : isRock
-                        ? 'bg-stone-700 border-stone-500'
-                        : isBridge
-                        ? 'bg-amber-700/60 border-amber-600'
-                        : 'bg-emerald-800/70 border-emerald-600/70 hover:bg-emerald-700/80'
-                    }`}
+                  className={`w-12 h-12 sm:w-14 sm:h-14 rounded-2xl flex items-center justify-center text-2xl relative shadow-md transition-all duration-150 ${
+                    isTent
+                      ? 'bg-amber-400 border-2 border-amber-600'
+                      : isRock
+                      ? 'bg-stone-700 border-2 border-stone-800'
+                      : isBridge
+                      ? 'bg-amber-700 border-2 border-amber-800'
+                      : 'bg-emerald-600/80 hover:bg-emerald-500/80 border-2 border-emerald-500'
+                  }`}
                 >
-                  {/* Static elements */}
-                  {isTent && <span className="text-3xl animate-bounce">🏕️</span>}
-                  {isRock && <span className="text-2xl">🪨</span>}
-                  {isBridge && <span className="text-lg opacity-80">🪵</span>}
-                  {isTreat && <span className="text-2xl animate-pulse">{treatEmoji}</span>}
-                  {isStar && <span className="text-2xl animate-pulse">⭐</span>}
-
-                  {/* Animal Sprite */}
+                  {isRock && '🪨'}
+                  {isTent && '⛺'}
+                  {isTreat && treatEmoji}
+                  {isStar && '⭐'}
                   {isAnimalHere && (
-                    <div className="absolute inset-0 flex items-center justify-center z-10 scale-125 transition-transform duration-200">
-                      <span className="text-4xl filter drop-shadow-md animate-bounce">
-                        {animalEmoji}
-                      </span>
-                    </div>
+                    <span className="absolute inset-0 flex items-center justify-center text-3xl animate-bounce">
+                      {animalEmoji}
+                    </span>
                   )}
-                </div>
+                </button>
               );
             })
           )}
         </div>
       </div>
 
-      {/* Touch D-Pad for Kids */}
-      <div className="w-full max-w-sm grid grid-cols-3 gap-2 pb-2">
+      {/* Touch D-Pad */}
+      <div className="w-full max-w-xs grid grid-cols-3 gap-2 pb-2">
         <div />
         <button
           onClick={() => moveAnimal(0, -1)}
-          className="py-3 bg-lime-600 active:bg-lime-700 text-white font-bold rounded-2xl shadow-md border-b-4 border-lime-900 flex items-center justify-center active:translate-y-1"
+          className="py-3 bg-gradient-to-b from-emerald-600 to-emerald-800 active:from-emerald-700 active:to-emerald-900 text-white font-extrabold rounded-2xl shadow-md border-b-4 border-emerald-950 flex items-center justify-center active:translate-y-1"
         >
           <ArrowUp size={24} />
         </button>
         <div />
-
         <button
           onClick={() => moveAnimal(-1, 0)}
-          className="py-3 bg-lime-600 active:bg-lime-700 text-white font-bold rounded-2xl shadow-md border-b-4 border-lime-900 flex items-center justify-center active:translate-y-1"
+          className="py-3 bg-gradient-to-b from-emerald-600 to-emerald-800 active:from-emerald-700 active:to-emerald-900 text-white font-extrabold rounded-2xl shadow-md border-b-4 border-emerald-950 flex items-center justify-center active:translate-y-1"
         >
           <ArrowLeft size={24} />
         </button>
         <button
           onClick={() => moveAnimal(0, 1)}
-          className="py-3 bg-lime-600 active:bg-lime-700 text-white font-bold rounded-2xl shadow-md border-b-4 border-lime-900 flex items-center justify-center active:translate-y-1"
+          className="py-3 bg-gradient-to-b from-emerald-600 to-emerald-800 active:from-emerald-700 active:to-emerald-900 text-white font-extrabold rounded-2xl shadow-md border-b-4 border-emerald-950 flex items-center justify-center active:translate-y-1"
         >
           <ArrowDown size={24} />
         </button>
         <button
           onClick={() => moveAnimal(1, 0)}
-          className="py-3 bg-lime-600 active:bg-lime-700 text-white font-bold rounded-2xl shadow-md border-b-4 border-lime-900 flex items-center justify-center active:translate-y-1"
+          className="py-3 bg-gradient-to-b from-emerald-600 to-emerald-800 active:from-emerald-700 active:to-emerald-900 text-white font-extrabold rounded-2xl shadow-md border-b-4 border-emerald-950 flex items-center justify-center active:translate-y-1"
         >
           <ArrowRight size={24} />
         </button>

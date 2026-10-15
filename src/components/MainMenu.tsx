@@ -94,8 +94,16 @@ export const MainMenu: React.FC<Props> = ({
           </div>
         </div>
 
-        {/* Quick Toggles */}
-        <div className="flex items-center gap-1">
+        {/* Quick Toggles & APK button */}
+        <div className="flex items-center gap-1.5">
+          <button
+            onClick={onOpenApkModal}
+            className="flex items-center gap-1 bg-amber-400 hover:bg-amber-300 text-stone-950 px-2 py-1.5 rounded-xl font-black text-xs shadow-md border-b-2 border-amber-600 cursor-pointer active:translate-y-0.5"
+            title="Download Android APK"
+          >
+            <Smartphone size={14} />
+            <span>APK</span>
+          </button>
           <button
             onClick={onToggleSound}
             className="p-1.5 rounded-xl bg-emerald-800 hover:bg-emerald-700 active:scale-95 text-emerald-200 border border-emerald-600 cursor-pointer"
